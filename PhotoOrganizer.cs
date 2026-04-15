@@ -18,8 +18,8 @@ class FileOrganizer
 {
     // ── Configuration ─────────────────────────────────────────────────────────
     // !! Change these two paths before running !!
-    private static readonly string SourceRoot      = @"Source_Path";
-    private static readonly string DestinationRoot = @"Destination_Path";
+    private static readonly string SourceRoot      = @"C:\Users\omerf\Pictures\Camera";
+    private static readonly string DestinationRoot = @"C:\Users\omerf\Pictures\USA";
 
     // ── Image extensions — will attempt EXIF Date Taken first ─────────────────
     private static readonly HashSet<string> ImageExtensions = new HashSet<string>(
@@ -60,6 +60,7 @@ class FileOrganizer
     // ── Counters ──────────────────────────────────────────────────────────────
     private static int _movedImage        = 0;   // images moved via EXIF date
     private static int _movedExifFallback = 0;   // images moved via Last Modified (no EXIF)
+    private static int _movedFilename     = 0;   // files moved via date parsed from filename
     private static int _movedOther        = 0;   // non-images moved via Last Modified
     private static int _overwritten       = 0;   // destination file replaced
     private static int _skipped           = 0;   // same-file, already in place
@@ -116,6 +117,7 @@ class FileOrganizer
         Log($"Finished          : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         Log($"Images (EXIF)     : {_movedImage,-6}  moved using EXIF Date Taken");
         Log($"Images (fallback) : {_movedExifFallback,-6}  image had no EXIF -- used Last Modified");
+        Log($"Filename dates     : {_movedFilename,-6}  moved using date parsed from filename");
         Log($"Other files       : {_movedOther,-6}  moved using Last Modified date");
         Log($"Overwritten       : {_overwritten,-6}  duplicate filename -- destination replaced");
         Log($"Skipped           : {_skipped,-6}  already in place (same path)");
@@ -134,23 +136,77 @@ class FileOrganizer
     static void ProcessImageFile(string filePath, string destRoot, bool dryRun)
     {
         DateTime? exifDate = GetExifDateTaken(filePath);
-        bool usedFallback  = !exifDate.HasValue;
-        DateTime date      = exifDate ?? File.GetLastWriteTime(filePath);
+        DateTime date;
+        string tag;
 
-        if (usedFallback) _movedExifFallback++;
-        else              _movedImage++;
+        if (exifDate.HasValue)
+        {
+            _movedImage++;
+            date = exifDate.Value;
+            tag  = "[IMG-EXIF]    ";
+        }
+        else if (TryParseDateFromFilename(filePath, out DateTime fnameDate))
+        {
+            _movedFilename++;
+            date = fnameDate;
+            tag  = "[IMG-FNAME]  ";
+        }
+        else
+        {
+            _movedExifFallback++;
+            date = File.GetLastWriteTime(filePath);
+            tag  = "[IMG-FALLBACK]";
+        }
 
-        string tag = usedFallback ? "[IMG-FALLBACK]" : "[IMG-EXIF]    ";
         MoveFile(filePath, destRoot, date.Year, dryRun, tag);
     }
 
     // ── Non-image / unknown files: always Last Modified ───────────────────────
     static void ProcessOtherFile(string filePath, string destRoot, bool dryRun, bool unknownExt)
     {
-        DateTime date = File.GetLastWriteTime(filePath);
-        _movedOther++;
-        string tag = unknownExt ? "[OTHER-UNK]   " : "[OTHER]       ";
+        DateTime date;
+        string tag;
+
+        if (TryParseDateFromFilename(filePath, out DateTime fnameDate))
+        {
+            _movedFilename++;
+            date = fnameDate;
+            tag  = "[OTHER-FNAME] ";
+        }
+        else
+        {
+            date = File.GetLastWriteTime(filePath);
+            _movedOther++;
+            tag = unknownExt ? "[OTHER-UNK]   " : "[OTHER]       ";
+        }
+
         MoveFile(filePath, destRoot, date.Year, dryRun, tag);
+    }
+
+    // Try to parse a date/time from the filename. Returns true if successful.
+    static bool TryParseDateFromFilename(string filePath, out DateTime date)
+    {
+        date = default;
+        string name = Path.GetFileNameWithoutExtension(filePath);
+        if (string.IsNullOrEmpty(name)) return false;
+
+        // Look for an 8-digit date (YYYYMMDD) optionally followed by '_' or '-' and a 6-digit time (HHMMSS)
+        var m = System.Text.RegularExpressions.Regex.Match(name, @"(19|20)\d{6}(?:[_-]?(\d{6}))?");
+        if (!m.Success) return false;
+
+        string ymd  = m.Value.Substring(0, 8);
+        string hms  = null;
+        if (m.Groups.Count > 1 && m.Groups[2].Success)
+            hms = m.Groups[2].Value;
+
+        string fmt = hms == null ? "yyyyMMdd" : "yyyyMMddHHmmss";
+        string combined = hms == null ? ymd : ymd + hms;
+        if (DateTime.TryParseExact(combined, fmt, null, System.Globalization.DateTimeStyles.None, out DateTime dt))
+        {
+            date = dt;
+            return true;
+        }
+        return false;
     }
 
     // ── Core move logic ───────────────────────────────────────────────────────
@@ -200,10 +256,13 @@ class FileOrganizer
         {
 #if WINDOWS
             using var img = System.Drawing.Image.FromFile(filePath);
-            var prop = img.PropertyItems
-                          .FirstOrDefault(p => p.Id == ExifTagDateTimeOriginal);
-            if (prop?.Value != null)
+            // Try common EXIF date tags in order of preference:
+            // DateTimeOriginal (36867), DateTimeDigitized (36868), DateTime (306)
+            int[] candidateTags = { ExifTagDateTimeOriginal, 36868, 306 };
+            foreach (int tagId in candidateTags)
             {
+                var prop = img.PropertyItems.FirstOrDefault(p => p.Id == tagId);
+                if (prop?.Value == null) continue;
                 string raw = Encoding.ASCII.GetString(prop.Value).TrimEnd('\0');
                 if (DateTime.TryParseExact(raw, ExifDateFormat,
                         null, System.Globalization.DateTimeStyles.None, out DateTime dt))
@@ -286,7 +345,7 @@ class FileOrganizer
                 uint   comp = ReadU32(br, le);
                 byte[] voff = br.ReadBytes(4);
 
-                if (tag == ExifTagDateTimeOriginal && type == 2)
+                if ((tag == ExifTagDateTimeOriginal || tag == 36868 || tag == 306) && type == 2)
                 {
                     long saved  = stream.Position;
                     uint valOff = le

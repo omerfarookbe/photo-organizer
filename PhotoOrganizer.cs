@@ -9,8 +9,8 @@ using System.Text;
 ///
 /// Date resolution rules:
 ///   Image files  → EXIF "Date Taken"  (DateTimeOriginal)
-///                  fallback: Last Modified date
-///   All others   → Last Modified date  (always)
+///                  fallback: Date Created (file creation time)
+///   All others   → Date Created (always)
 ///
 /// Duplicate filenames → destination is OVERWRITTEN.
 /// </summary>
@@ -18,7 +18,7 @@ class FileOrganizer
 {
     // ── Configuration ─────────────────────────────────────────────────────────
     // !! Change these two paths before running !!
-    private static readonly string SourceRoot      = @"C:\Users\omerf\Pictures\Camera";
+    private static readonly string SourceRoot      = @"C:\Users\omerf\Pictures\2025";
     private static readonly string DestinationRoot = @"C:\Users\omerf\Pictures\USA";
 
     // ── Image extensions — will attempt EXIF Date Taken first ─────────────────
@@ -32,7 +32,7 @@ class FileOrganizer
         ".srw", ".x3f", ".raf", ".psd"
     };
 
-    // ── Non-image extensions — always use Last Modified date ──────────────────
+    // ── Non-image extensions — always use Date Created (file creation time) ──
     // Covers everything visible in your screenshot and common extras.
     private static readonly HashSet<string> OtherExtensions = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase)
@@ -59,9 +59,9 @@ class FileOrganizer
 
     // ── Counters ──────────────────────────────────────────────────────────────
     private static int _movedImage        = 0;   // images moved via EXIF date
-    private static int _movedExifFallback = 0;   // images moved via Last Modified (no EXIF)
+    private static int _movedExifFallback = 0;   // images moved via Date Created (no EXIF)
     private static int _movedFilename     = 0;   // files moved via date parsed from filename
-    private static int _movedOther        = 0;   // non-images moved via Last Modified
+    private static int _movedOther        = 0;   // non-images moved via Date Created
     private static int _overwritten       = 0;   // destination file replaced
     private static int _skipped           = 0;   // same-file, already in place
     private static int _errors            = 0;
@@ -106,7 +106,7 @@ class FileOrganizer
             else if (OtherExtensions.Contains(ext))
                 ProcessOtherFile(filePath, dest, dryRun, unknownExt: false);
             else
-                // Unknown extension: still move it using Last Modified
+                // Unknown extension: still move it using Date Created
                 // so nothing gets left behind. Tagged in the log as [OTHER-UNK].
                 ProcessOtherFile(filePath, dest, dryRun, unknownExt: true);
         }
@@ -116,9 +116,9 @@ class FileOrganizer
         Log(new string('-', 70));
         Log($"Finished          : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         Log($"Images (EXIF)     : {_movedImage,-6}  moved using EXIF Date Taken");
-        Log($"Images (fallback) : {_movedExifFallback,-6}  image had no EXIF -- used Last Modified");
+        Log($"Images (fallback) : {_movedExifFallback,-6}  image had no EXIF -- used Date Created");
         Log($"Filename dates     : {_movedFilename,-6}  moved using date parsed from filename");
-        Log($"Other files       : {_movedOther,-6}  moved using Last Modified date");
+        Log($"Other files       : {_movedOther,-6}  moved using Date Created");
         Log($"Overwritten       : {_overwritten,-6}  duplicate filename -- destination replaced");
         Log($"Skipped           : {_skipped,-6}  already in place (same path)");
         Log($"Errors            : {_errors}");
@@ -154,7 +154,7 @@ class FileOrganizer
         else
         {
             _movedExifFallback++;
-            date = File.GetLastWriteTime(filePath);
+            date = File.GetCreationTime(filePath);
             tag  = "[IMG-FALLBACK]";
         }
 
@@ -175,7 +175,7 @@ class FileOrganizer
         }
         else
         {
-            date = File.GetLastWriteTime(filePath);
+            date = File.GetCreationTime(filePath);
             _movedOther++;
             tag = unknownExt ? "[OTHER-UNK]   " : "[OTHER]       ";
         }
@@ -417,7 +417,7 @@ class FileOrganizer
         Console.WriteLine(@"
 +====================================================+
 |           File Organizer by Year                   |
-|  Images -> EXIF Date Taken | Others -> Last Modified |
+|  Images -> EXIF Date Taken | Others -> Date Created |
 +====================================================+");
         Console.ResetColor();
         Console.WriteLine();

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Target net8.0 for cross-platform, or net48 for .NET Framework 4.8 on Windows -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AssemblyName>PhotoOrganizer</AssemblyName>
+    <RootNamespace>PhotoOrganizer</RootNamespace>
+
+    <!--
+      On Windows you can uncomment this to enable the System.Drawing EXIF path,
+      which is faster. Requires the libgdiplus package on Linux/macOS.
+    -->
+    <!-- <DefineConstants>WINDOWS</DefineConstants> -->
+  </PropertyGroup>
+
+</Project>

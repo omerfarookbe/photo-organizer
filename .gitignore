@@ -1,0 +1,39 @@
+## Visual Studio / Rider / VSCode
+.vs/
+.vscode/
+.idea/
+
+## Build artifacts
+bin/
+obj/
+out/
+publish/
+TestResults/
+
+## User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## NuGet
+.nuget/
+packages/
+*.nupkg
+
+## Logs
+*.log
+
+## OS generated
+Thumbs.db
+.DS_Store
+
+## JetBrains
+_ReSharper*/
+*.DotSettings.user
+
+## Others
+*.vsix
+
+# If you need to keep the app log next to the executable for diagnostics,
+# remove the "*.log" entry above. By default logs are ignored to keep the repo clean.
